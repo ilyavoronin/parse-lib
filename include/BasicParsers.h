@@ -12,5 +12,6 @@ extern Parser<char> pcheck(std::function<bool(char)> f);
 extern Parser<char> psuc();
 extern Parser<char> pfail();
 extern Parser<std::string> puntil(const std::string &s);
+extern Parser<std::string> pwhile(std::function<bool(char)> f);
 
 #endif //FL_2020_SPBU_SPR_BASICPARSERS_H

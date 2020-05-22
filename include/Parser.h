@@ -4,6 +4,7 @@
 #include <sstream>
 #include <functional>
 #include <queue>
+#include <memory>
 
 #include "SStream.h"
 
@@ -68,9 +69,10 @@ T Parser<T>::operator[](SStream &s) const {
 
 template <typename T>
 Parser<T> Parser<T>::combine(std::function<T(SStream&)> f) {
-    return Parser([f](SStream &s) -> Result<T> {
+    auto fp = std::make_shared<std::function<T(SStream&)>>(f);
+    return Parser([fp](SStream &s) -> Result<T> {
         try {
-            T res = f(s);
+            T res = (*fp)(s);
             return Result(res, true);
         } catch (ParsingFailedException) {
             return Result(T{}, false);
@@ -81,22 +83,29 @@ Parser<T> Parser<T>::combine(std::function<T(SStream&)> f) {
 template <typename T>
 template <typename L>
 Parser<L> Parser<T>::map(std::function<L(T)> f) const {
-    return Parser<L>::combine([f, this](auto &ss) {
-        T t = (*this)[ss];
-        return f(t);
+    auto fp = std::make_shared<std::function<L(T)>>(f);
+    auto pparse = std::make_shared<std::function<Result<T>(SStream&)>>(parse);
+    return Parser<L>([fp, pparse](auto &ss) {
+        auto res = (*pparse)(ss);
+        if (res.success) {
+            return Result((*fp)(res.obj), true);
+        }
+        else {
+            return Result(L{}, false);
+        }
     });
 }
 
 template <typename T>
 Parser<T> operator|(const Parser<T> &p1, const Parser<T> &p2) {
-    auto f1 = p1.parse;
-    auto f2 = p2.parse;
+    auto f1 = std::make_shared<std::function<Result<T>(SStream &)>>(p1.parse);
+    auto f2 = std::make_shared<std::function<Result<T>(SStream &)>>(p2.parse);
     return Parser<T>([f1, f2](SStream &s) -> Result<T> {
-        Result res1 = Parser<T>(f1).runParser(s);
+        Result res1 = Parser<T>(*f1).runParser(s);
         if (res1.success) {
             return res1;
         }
-        return Parser<T>(f2).runParser(s);
+        return Parser<T>(*f2).runParser(s);
     });
 }
 template <typename T>
@@ -119,11 +128,12 @@ Parser<T> Parser<T>::oneOf(std::queue <Parser> &parsers) {
 }
 
 template <typename T>
-Parser<std::vector<T>> Parser<T>::many(const Parser<T> &p) {
+Parser<std::vector<T>> Parser<T>::many(const Parser<T> &p_) {
+    auto p = std::make_shared<type(p_)>(p_);
     return Parser<std::vector<T>>::combine([p](auto &ss) {
         std::vector <T> resv;
         while (true) {
-            Result<T> res = p.runParser(ss);
+            Result<T> res = (*p).runParser(ss);
             if (!res.success) {
                 break;
             }
@@ -134,11 +144,12 @@ Parser<std::vector<T>> Parser<T>::many(const Parser<T> &p) {
 }
 
 template <typename T>
-Parser<std::vector<T>> Parser<T>::many1(const Parser<T> &p) {
+Parser<std::vector<T>> Parser<T>::many1(const Parser<T> &p_) {
+    auto p = std::make_shared<type(p_)>(p_);
     return Parser<std::vector<T>>::combine([p](auto &ss) {
         std::vector <T> resv;
         while (true) {
-            Result<T> res = p.runParser(ss);
+            Result<T> res = (*p).runParser(ss);
             if (!res.success) {
                 break;
             }
